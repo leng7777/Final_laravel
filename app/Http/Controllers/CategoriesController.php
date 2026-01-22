@@ -2,89 +2,131 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Categories; // ពិនិត្យមើលបើ Model ឈ្មោះ Category ត្រូវដូរមក Category វិញ
+use App\Models\Categories;
 use Illuminate\Http\Request;
+use Exception;
 
 class CategoriesController extends Controller
 {
     /**
-     * បង្ហាញប្រភេទផលិតផលទាំងអស់
+     * បង្ហាញ Category ទាំងអស់
      */
     public function index()
     {
-        $categories = Categories::all();
-        return response()->json($categories, 200);
+        try {
+            $categories = Categories::all();
+            return response()->json($categories, 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => 'មានបញ្ហាកើតឡើង',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
-     * បង្កើតប្រភេទផលិតផលថ្មី (Admin Only)
+     * បង្កើត Category ថ្មី
      */
     public function store(Request $request)
     {
-        $fields = $request->validate([
-            'category_name' => 'required|string|unique:categories,category_name|max:255',
-        ]);
+        try {
+            $fields = $request->validate([
+                'category_name' => 'required|string|unique:categories,category_name|max:255',
+            ]);
 
-        $category = Categories::create($fields);
+            $category = Categories::create($fields);
 
-        return response()->json([
-            'message' => 'ប្រភេទផលិតផលត្រូវបានបង្កើត',
-            'category' => $category
-        ], 201);
+            return response()->json([
+                'message' => 'ប្រភេទផលិតផលត្រូវបានបង្កើត',
+                'category' => $category
+            ], 201);
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => 'មិនអាចបង្កើត Category បានទេ',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
-     * បង្ហាញព័ត៌មាន Category មួយ និងផលិតផលដែលមានក្នុងនោះ
+     * បង្ហាញ Category មួយ (ជាមួយ Products)
      */
     public function show($id)
     {
-        // ទាញយក Category ព្រមទាំងបញ្ជី Products ដែលនៅក្នុង Category នោះ
-        $category = Categories::with('products')->find($id);
+        try {
+            $category = Categories::with('products')->find($id);
 
-        if (!$category) {
-            return response()->json(['message' => 'រកមិនឃើញប្រភេទផលិតផលនេះទេ'], 404);
+            if (!$category) {
+                return response()->json([
+                    'message' => 'រកមិនឃើញប្រភេទផលិតផលនេះទេ'
+                ], 404);
+            }
+
+            return response()->json($category, 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => 'មានបញ្ហាក្នុងការទាញទិន្នន័យ',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        return response()->json($category, 200);
     }
 
     /**
-     * កែប្រែឈ្មោះប្រភេទផលិតផល
+     * កែប្រែ Category
      */
     public function update(Request $request, $id)
     {
-        $category = Categories::find($id);
+        try {
+            $category = Categories::find($id);
 
-        if (!$category) {
-            return response()->json(['message' => 'រកមិនឃើញទិន្នន័យដើម្បីកែប្រែ'], 404);
+            if (!$category) {
+                return response()->json([
+                    'message' => 'រកមិនឃើញទិន្នន័យដើម្បីកែប្រែ'
+                ], 404);
+            }
+
+            $fields = $request->validate([
+                'category_name' => 'required|string|unique:categories,category_name,' . $id . '|max:255',
+            ]);
+
+            $category->update($fields);
+
+            return response()->json([
+                'message' => 'បានកែប្រែដោយជោគជ័យ',
+                'category' => $category
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => 'មិនអាចកែប្រែបានទេ',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        $fields = $request->validate([
-            'category_name' => 'required|string|unique:categories,category_name,' . $id . '|max:255',
-        ]);
-
-        $category->update($fields);
-
-        return response()->json([
-            'message' => 'បានកែប្រែដោយជោគជ័យ',
-            'category' => $category
-        ], 200);
     }
 
     /**
-     * លុបប្រភេទផលិតផល
+     * លុប Category
      */
     public function destroy($id)
     {
-        $category = Categories::find($id);
+        try {
+            $category = Categories::find($id);
 
-        if (!$category) {
-            return response()->json(['message' => 'រកមិនឃើញទិន្នន័យដើម្បីលុប'], 404);
+            if (!$category) {
+                return response()->json([
+                    'message' => 'រកមិនឃើញទិន្នន័យដើម្បីលុប'
+                ], 404);
+            }
+
+            $category->delete();
+
+            return response()->json([
+                'message' => 'លុបប្រភេទផលិតផលរួចរាល់'
+            ], 200);
+        } catch (Exception $e) {
+            return response()->json([
+                'message' => 'មិនអាចលុបបានទេ',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        // បញ្ជាក់៖ បើលុប Category ផលិតផលក្នុងនោះក៏អាចនឹងប៉ះពាល់ (អាស្រ័យលើ On Delete Cascade ក្នុង Migration)
-        $category->delete();
-
-        return response()->json(['message' => 'លុបប្រភេទផលិតផលរួចរាល់'], 200);
     }
 }
