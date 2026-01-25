@@ -3,35 +3,47 @@
 namespace App\Http\Controllers;
 
 use App\Models\Order;
-use App\Http\OrderItemController;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class OrderController extends Controller
 {
     /**
-     * បង្ហាញប្រវត្តិបញ្ជាទិញ (សម្រាប់ Admin ឃើញទាំងអស់ សម្រាប់ User ឃើញតែរបស់ខ្លួនឯង)
+     * Display order history
+     * - Admin: can see all orders
+     * - User: can see only their own orders
      */
     public function index()
     {
-        $user = Auth::user();
+        try {
+            $user = Auth::user();
 
-        if ($user->role_id == 1) { // បើជា Admin
-            $orders = Order::with(['user', 'orderItems.product'])->latest()->get();
-        } else {
-            $orders = Order::with('orderItems.product')
-                ->where('user_id', $user->id)
-                ->latest()
-                ->get();
+            if ($user->role_id == 1) { // Admin
+                $orders = Order::with(['user', 'orderItems.product'])
+                    ->latest()
+                    ->get();
+            } else {
+                $orders = Order::with(['orderItems.product'])
+                    ->where('user_id', $user->id)
+                    ->latest()
+                    ->get();
+            }
+
+            return response()->json($orders, 200);
+        } catch (\Exception $e) {
+            Log::error('Order index error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to retrieve orders'
+            ], 500);
         }
-
-        return response()->json($orders, 200);
     }
 
     /**
-     * បង្កើតការបញ្ជាទិញថ្មី (Checkout)
+     * Create a new order (Checkout)
      */
     public function store(Request $request)
     {
@@ -41,99 +53,152 @@ class OrderController extends Controller
             'items.*.quantity' => 'required|integer|min:1',
         ]);
 
-        // ប្រើ DB Transaction ដើម្បីធានាថា បើការងារណាមួយ error វានឹង cancel ទាំងអស់វិញ (Data Integrity)
-        return DB::transaction(function () use ($request) {
-            $totalAmount = 0;
-            $orderItemsData = [];
+        try {
+            return DB::transaction(function () use ($request) {
 
-            // ១. គណនាតម្លៃសរុប និងឆែកស្តុកទំនិញ
-            foreach ($request->items as $item) {
-                $product = Product::lockForUpdate()->find($item['product_id']);
+                $totalAmount = 0;
+                $orderItemsData = [];
 
-                if ($product->quantity < $item['quantity']) {
-                    throw new \Exception("ទំនិញ " . $product->product_name . " មិនមានស្តុកគ្រប់គ្រាន់ទេ");
+                // 1. Check product stock and calculate total amount
+                foreach ($request->items as $item) {
+
+                    $product = Product::lockForUpdate()->find($item['product_id']);
+
+                    if (!$product || $product->quantity < $item['quantity']) {
+                        throw new \Exception(
+                            'Insufficient stock for product: ' . ($product->product_name ?? '')
+                        );
+                    }
+
+                    $totalAmount += $product->price * $item['quantity'];
+
+                    $orderItemsData[] = [
+                        'product_id' => $product->id,
+                        'quantity'   => $item['quantity'],
+                        'unit_price' => $product->price, // price at purchase time
+                    ];
+
+                    // Reduce product stock
+                    $product->decrement('quantity', $item['quantity']);
                 }
 
-                $totalAmount += $product->price * $item['quantity'];
+                // 2. Create order
+                $order = Order::create([
+                    'user_id'      => Auth::id(),
+                    'total_amount' => $totalAmount,
+                    'status'       => 'pending'
+                ]);
 
-                $orderItemsData[] = [
-                    'product_id' => $product->id,
-                    'quantity' => $item['quantity'],
-                    'price' => $product->price, // រក្សាទុកតម្លៃពេលទិញ
-                ];
+                // 3. Create order items
+                foreach ($orderItemsData as $itemData) {
+                    $order->orderItems()->create($itemData);
+                }
 
-                // ២. កាត់ស្តុកទំនិញ
-                $product->decrement('quantity', $item['quantity']);
-            }
-
-            // ៣. បង្កើត Order
-            $order = Order::create([
-                'user_id' => Auth::id(),
-                'total_amount' => $totalAmount,
-                'status' => 'pending'
-            ]);
-
-            // ៤. បញ្ចូលមុខទំនិញទៅក្នុង order_items
-            foreach ($orderItemsData as $itemData) {
-                $order->orderItems()->create($itemData);
-            }
+                return response()->json([
+                    'message' => 'Order placed successfully',
+                    'order'   => $order->load(['orderItems.product'])
+                ], 201);
+            });
+        } catch (\Exception $e) {
+            Log::error('Order store error: ' . $e->getMessage());
 
             return response()->json([
-                'message' => 'ការបញ្ជាទិញបានជោគជ័យ',
-                'order' => $order->load('orderItems')
-            ], 201);
-        });
+                'message' => $e->getMessage()
+            ], 400);
+        }
     }
 
     /**
-     * មើលព័ត៌មានលម្អិតនៃ Order មួយ
+     * Display details of a single order
      */
     public function show($id)
     {
-        $order = Order::with(['user', 'orderItems.product'])->find($id);
+        try {
+            $order = Order::with(['user', 'orderItems.product'])->find($id);
 
-        if (!$order) {
-            return response()->json(['message' => 'រកមិនឃើញ Order នេះទេ'], 404);
+            if (!$order) {
+                return response()->json([
+                    'message' => 'Order not found'
+                ], 404);
+            }
+
+            // Prevent users from accessing other users' orders
+            if (Auth::id() !== $order->user_id && Auth::user()->role_id !== 1) {
+                return response()->json([
+                    'message' => 'You are not authorized to view this order'
+                ], 403);
+            }
+
+            return response()->json($order, 200);
+        } catch (\Exception $e) {
+            Log::error('Order show error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to retrieve order details'
+            ], 500);
         }
-
-        // ការពារកុំឱ្យ User ម្នាក់ ទៅមើល Order របស់ User ម្នាក់ទៀត
-        if (Auth::id() !== $order->user_id && Auth::user()->role_id !== 1) {
-            return response()->json(['message' => 'អ្នកគ្មានសិទ្ធិមើលទិន្នន័យនេះទេ'], 403);
-        }
-
-        return response()->json($order, 200);
     }
 
     /**
-     * កែប្រែស្ថានភាព Order (ឧទាហរណ៍៖ ពី pending ទៅ completed) - Admin Only
+     * Update order status (Admin only)
      */
     public function update(Request $request, $id)
     {
-        $order = Order::find($id);
+        try {
+            $order = Order::find($id);
 
-        if (!$order) {
-            return response()->json(['message' => 'រកមិនឃើញ Order'], 404);
+            if (!$order) {
+                return response()->json([
+                    'message' => 'Order not found'
+                ], 404);
+            }
+
+            $request->validate([
+                'status' => 'required|in:pending,processing,completed,cancelled'
+            ]);
+
+            $order->update([
+                'status' => $request->status
+            ]);
+
+            return response()->json([
+                'message' => 'Order status updated successfully',
+                'order'   => $order
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Order update error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to update order status'
+            ], 500);
         }
-
-        $request->validate([
-            'status' => 'required|in:pending,processing,completed,cancelled'
-        ]);
-
-        $order->update(['status' => $request->status]);
-
-        return response()->json(['message' => 'បានកែប្រែស្ថានភាពជោគជ័យ', 'order' => $order]);
     }
 
     /**
-     * លុប Order (ជាទូទៅគេមិនសូវលុបទេ គេប្រើ status = cancelled វិញ)
+     * Delete an order (not recommended, usually use status = cancelled)
      */
     public function destroy($id)
     {
-        $order = Order::find($id);
-        if ($order) {
+        try {
+            $order = Order::find($id);
+
+            if (!$order) {
+                return response()->json([
+                    'message' => 'Order not found'
+                ], 404);
+            }
+
             $order->delete();
-            return response()->json(['message' => 'បានលុប Order រួចរាល់']);
+
+            return response()->json([
+                'message' => 'Order deleted successfully'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Order delete error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'Failed to delete order'
+            ], 500);
         }
-        return response()->json(['message' => 'រកមិនឃើញទិន្នន័យ'], 404);
     }
 }

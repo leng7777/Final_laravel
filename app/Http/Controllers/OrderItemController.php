@@ -4,90 +4,142 @@ namespace App\Http\Controllers;
 
 use App\Models\Order_item;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class OrderItemController extends Controller
 {
     /**
-     * បង្ហាញបញ្ជីមុខទំនិញដែលបានលក់ទាំងអស់ (របាយការណ៍លក់)
+     * បង្ហាញបញ្ជី Order Items ទាំងអស់
      */
     public function index()
     {
-        // ទាញយក Order_item ទាំងអស់ រួមជាមួយព័ត៌មាន Product និង Order របស់វា
-        $items = Order_item::with(['product', 'order.user'])->latest()->get();
-        return response()->json($items, 200);
+        try {
+            $items = Order_item::with(['product', 'order.user'])
+                ->latest()
+                ->get();
+
+            return response()->json($items, 200);
+        } catch (\Exception $e) {
+            Log::error('OrderItem index error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'មានបញ្ហាក្នុងការទាញយកទិន្នន័យ'
+            ], 500);
+        }
     }
 
     /**
-     * បង្កើត Order Item ថ្មី (ជាទូទៅប្រើក្នុង OrderController តែបើចង់មានក្នុងនេះក៏បាន)
+     * បង្កើត Order Item ថ្មី
      */
     public function store(Request $request)
     {
-        $fields = $request->validate([
-            'order_id'   => 'required|exists:orders,id',
-            'product_id' => 'required|exists:products,id',
-            'quantity'   => 'required|integer|min:1',
-            'price'      => 'required|numeric',
-        ]);
+        try {
+            $fields = $request->validate([
+                'order_id'    => 'required|exists:orders,id',
+                'product_id'  => 'required|exists:products,id',
+                'quantity'    => 'required|integer|min:1',
+                'unit_price'  => 'required|numeric|min:0',
+            ]);
 
-        $orderItem = Order_item::create($fields);
+            $orderItem = Order_item::create($fields);
 
-        return response()->json([
-            'message' => 'បានបន្ថែមមុខទំនិញទៅក្នុង Order រួចរាល់',
-            'data'    => $orderItem
-        ], 201);
+            return response()->json([
+                'message' => 'បានបន្ថែមមុខទំនិញទៅក្នុង Order រួចរាល់',
+                'data'    => $orderItem
+            ], 201);
+        } catch (\Exception $e) {
+            Log::error('OrderItem store error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'បរាជ័យក្នុងការបង្កើត Order Item'
+            ], 500);
+        }
     }
 
     /**
-     * បង្ហាញព័ត៌មានលម្អិតនៃ Item មួយ
+     * បង្ហាញ Order Item មួយ
      */
     public function show($id)
     {
-        $orderItem = Order_item::with(['product', 'order'])->find($id);
+        try {
+            $orderItem = Order_item::with(['product', 'order'])
+                ->find($id);
 
-        if (!$orderItem) {
-            return response()->json(['message' => 'រកមិនឃើញទិន្នន័យ'], 404);
+            if (!$orderItem) {
+                return response()->json([
+                    'message' => 'រកមិនឃើញទិន្នន័យ'
+                ], 404);
+            }
+
+            return response()->json($orderItem, 200);
+        } catch (\Exception $e) {
+            Log::error('OrderItem show error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'មានបញ្ហាក្នុងការបង្ហាញទិន្នន័យ'
+            ], 500);
         }
-
-        return response()->json($orderItem, 200);
     }
 
     /**
-     * កែប្រែទិន្នន័យ Item (ឧទាហរណ៍៖ កែចំនួន Quantity ក្នុងករណីពិសេស)
+     * កែប្រែ Order Item
      */
     public function update(Request $request, $id)
     {
-        $orderItem = Order_item::find($id);
+        try {
+            $orderItem = Order_item::find($id);
 
-        if (!$orderItem) {
-            return response()->json(['message' => 'រកមិនឃើញទិន្នន័យដើម្បីកែប្រែ'], 404);
+            if (!$orderItem) {
+                return response()->json([
+                    'message' => 'រកមិនឃើញទិន្នន័យដើម្បីកែប្រែ'
+                ], 404);
+            }
+
+            $fields = $request->validate([
+                'quantity'   => 'integer|min:1',
+                'unit_price' => 'numeric|min:0',
+            ]);
+
+            $orderItem->update($fields);
+
+            return response()->json([
+                'message' => 'បានកែប្រែជោគជ័យ',
+                'data'    => $orderItem
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('OrderItem update error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'បរាជ័យក្នុងការកែប្រែ'
+            ], 500);
         }
-
-        $fields = $request->validate([
-            'quantity' => 'integer|min:1',
-            'price'    => 'numeric',
-        ]);
-
-        $orderItem->update($fields);
-
-        return response()->json([
-            'message' => 'បានកែប្រែជោគជ័យ',
-            'data'    => $orderItem
-        ], 200);
     }
 
     /**
-     * លុបមុខទំនិញចេញពី Order (Admin Only)
+     * លុប Order Item
      */
     public function destroy($id)
     {
-        $orderItem = Order_item::find($id);
+        try {
+            $orderItem = Order_item::find($id);
 
-        if (!$orderItem) {
-            return response()->json(['message' => 'រកមិនឃើញទិន្នន័យដើម្បីលុប'], 404);
+            if (!$orderItem) {
+                return response()->json([
+                    'message' => 'រកមិនឃើញទិន្នន័យដើម្បីលុប'
+                ], 404);
+            }
+
+            $orderItem->delete();
+
+            return response()->json([
+                'message' => 'បានលុបមុខទំនិញរួចរាល់'
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('OrderItem delete error: ' . $e->getMessage());
+
+            return response()->json([
+                'message' => 'បរាជ័យក្នុងការលុប'
+            ], 500);
         }
-
-        $orderItem->delete();
-
-        return response()->json(['message' => 'បានលុបមុខទំនិញរួចរាល់'], 200);
     }
 }

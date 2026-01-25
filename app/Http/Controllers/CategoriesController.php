@@ -4,52 +4,57 @@ namespace App\Http\Controllers;
 
 use App\Models\Categories;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Exception;
 
 class CategoriesController extends Controller
 {
     /**
-     * បង្ហាញ Category ទាំងអស់
+     * Display all categories
      */
     public function index()
     {
         try {
             $categories = Categories::all();
+
             return response()->json($categories, 200);
         } catch (Exception $e) {
+            Log::error('Category index error: ' . $e->getMessage());
+
             return response()->json([
-                'message' => 'មានបញ្ហាកើតឡើង',
-                'error' => $e->getMessage()
+                'message' => 'Failed to retrieve categories'
             ], 500);
         }
     }
 
     /**
-     * បង្កើត Category ថ្មី
+     * Create a new category
      */
     public function store(Request $request)
     {
         try {
             $fields = $request->validate([
                 'category_name' => 'required|string|unique:categories,category_name|max:255',
+                'description'   => 'nullable|string',
             ]);
 
             $category = Categories::create($fields);
 
             return response()->json([
-                'message' => 'ប្រភេទផលិតផលត្រូវបានបង្កើត',
+                'message'  => 'Category created successfully',
                 'category' => $category
             ], 201);
         } catch (Exception $e) {
+            Log::error('Category store error: ' . $e->getMessage());
+
             return response()->json([
-                'message' => 'មិនអាចបង្កើត Category បានទេ',
-                'error' => $e->getMessage()
+                'message' => 'Failed to create category'
             ], 500);
         }
     }
 
     /**
-     * បង្ហាញ Category មួយ (ជាមួយ Products)
+     * Display a single category with its products
      */
     public function show($id)
     {
@@ -58,21 +63,22 @@ class CategoriesController extends Controller
 
             if (!$category) {
                 return response()->json([
-                    'message' => 'រកមិនឃើញប្រភេទផលិតផលនេះទេ'
+                    'message' => 'Category not found'
                 ], 404);
             }
 
             return response()->json($category, 200);
         } catch (Exception $e) {
+            Log::error('Category show error: ' . $e->getMessage());
+
             return response()->json([
-                'message' => 'មានបញ្ហាក្នុងការទាញទិន្នន័យ',
-                'error' => $e->getMessage()
+                'message' => 'Failed to retrieve category'
             ], 500);
         }
     }
 
     /**
-     * កែប្រែ Category
+     * Update a category
      */
     public function update(Request $request, $id)
     {
@@ -81,30 +87,32 @@ class CategoriesController extends Controller
 
             if (!$category) {
                 return response()->json([
-                    'message' => 'រកមិនឃើញទិន្នន័យដើម្បីកែប្រែ'
+                    'message' => 'Category not found'
                 ], 404);
             }
 
             $fields = $request->validate([
                 'category_name' => 'required|string|unique:categories,category_name,' . $id . '|max:255',
+                'description'   => 'nullable|string',
             ]);
 
             $category->update($fields);
 
             return response()->json([
-                'message' => 'បានកែប្រែដោយជោគជ័យ',
+                'message'  => 'Category updated successfully',
                 'category' => $category
             ], 200);
         } catch (Exception $e) {
+            Log::error('Category update error: ' . $e->getMessage());
+
             return response()->json([
-                'message' => 'មិនអាចកែប្រែបានទេ',
-                'error' => $e->getMessage()
+                'message' => 'Failed to update category'
             ], 500);
         }
     }
 
     /**
-     * លុប Category
+     * Delete a category
      */
     public function destroy($id)
     {
@@ -113,19 +121,20 @@ class CategoriesController extends Controller
 
             if (!$category) {
                 return response()->json([
-                    'message' => 'រកមិនឃើញទិន្នន័យដើម្បីលុប'
+                    'message' => 'Category not found'
                 ], 404);
             }
 
             $category->delete();
 
             return response()->json([
-                'message' => 'លុបប្រភេទផលិតផលរួចរាល់'
+                'message' => 'Category deleted successfully'
             ], 200);
         } catch (Exception $e) {
+            Log::error('Category delete error: ' . $e->getMessage());
+
             return response()->json([
-                'message' => 'មិនអាចលុបបានទេ',
-                'error' => $e->getMessage()
+                'message' => 'Failed to delete category'
             ], 500);
         }
     }
