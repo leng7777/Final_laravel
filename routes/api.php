@@ -44,6 +44,9 @@ Route::middleware(['auth:sanctum', 'admin'])->group(function () {
     Route::get('/admin/orders', [OrderController::class, 'adminIndex']);
     Route::put('/admin/orders/{id}', [OrderController::class, 'updateStatus']);
 
+    // Route::get('/orders/{id}', [OrderController::class, 'update']);
+    // Route::put('/orders/{id}', [OrderController::class, 'destroy']);
+
     // Users (admin)
     Route::get('/users', [UserController::class, 'index']);
     Route::get('/users/{id}', [UserController::class, 'show']);

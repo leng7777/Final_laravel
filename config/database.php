@@ -73,8 +73,9 @@ return [
             'password' => env('DB_PASSWORD', ''),
             'charset' => 'utf8',
             'prefix' => '',
-            'schema' => 'public',
-            'sslmode' => 'require',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'disable'), // 👈 IMPORTANT
         ],
 
 
